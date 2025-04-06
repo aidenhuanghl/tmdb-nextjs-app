@@ -95,9 +95,27 @@ export default function Home({ initialMovies, initialPage, initialTotalPages, er
 // getServerSideProps 函数保持不变 (它只调用 getMovies)
 export async function getServerSideProps(context) {
    const page = context.query.page || '1';
-   const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-   const host = process.env.VERCEL_URL || context.req.headers.host || 'localhost:3000';
-   const apiBaseUrl = `${protocol}://${host}`;
+   
+   // 改进 baseUrl 构建方式，确保在 Vercel 上正确工作
+   let baseUrl = '';
+   
+   // 在 Vercel 环境中
+   if (process.env.VERCEL_URL) {
+     // Vercel 自动设置 VERCEL_URL，包含部署的 URL（无协议前缀）
+     baseUrl = `https://${process.env.VERCEL_URL}`;
+   } 
+   // 在预览部署环境中
+   else if (process.env.VERCEL_ENV === 'preview') {
+     // 确保使用 req.headers.host，可能包含预览 URL
+     baseUrl = `https://${context.req.headers.host}`;
+   }
+   // 本地开发环境
+   else {
+     // 本地开发使用 localhost
+     baseUrl = `http://${context.req.headers.host || 'localhost:3000'}`;
+   }
+   
+   console.log(`Environment: ${process.env.NODE_ENV}, Base URL: ${baseUrl}`);
 
    let initialMovies = [];
    let initialPage = parseInt(page, 10);
@@ -105,15 +123,20 @@ export async function getServerSideProps(context) {
    let error = null;
 
    try {
-     console.log(`getServerSideProps fetching: ${apiBaseUrl}/api/getMovies?page=${page}`); // 这个日志还在
-     const res = await fetch(`${apiBaseUrl}/api/getMovies?page=${page}`);
+     const apiUrl = `${baseUrl}/api/getMovies?page=${page}`;
+     console.log(`getServerSideProps fetching: ${apiUrl}`);
+     
+     const res = await fetch(apiUrl);
 
      if (!res.ok) {
-       // *** 注意：这里的错误处理逻辑也可能导致页面显示401 ***
        console.error(`API route /api/getMovies failed with status: ${res.status}`);
        const errorData = await res.json().catch(() => ({}));
-       // *** 如果 getMovies 返回 401，这里会将错误信息传递给页面 ***
        error = errorData.message || `加载电影失败，状态码: ${res.status}`;
+       
+       // 增加额外调试信息
+       if (errorData.debug) {
+         console.error('API Debug info:', errorData.debug);
+       }
      } else {
        const data = await res.json();
        initialMovies = data.results || [];

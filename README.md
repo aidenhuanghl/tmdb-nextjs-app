@@ -24,6 +24,21 @@ The `pages/api` directory is mapped to `/api/*`. Files in this directory are tre
 
 This project uses [`next/font`](https://nextjs.org/docs/pages/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Vercel 部署指南
+
+要在 Vercel 上部署此应用，请按照以下步骤进行：
+
+1. 在 Vercel 控制面板创建新项目并导入此 Git 仓库
+
+2. 在项目的"Settings" > "Environment Variables"中添加以下环境变量：
+   - `TMDB_API_KEY` - 填入您的 TMDb API 密钥
+
+3. 确保您已经将 API 密钥添加到 Vercel 环境变量中，否则应用将无法获取电影数据
+
+4. 部署完成后，Vercel 会自动为您的应用提供一个域名
+
+5. 如果遇到部署问题，请检查 Vercel 构建日志中的错误信息
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:
