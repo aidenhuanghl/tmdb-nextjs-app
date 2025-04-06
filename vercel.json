@@ -8,10 +8,7 @@
   ],
   "regions": ["hkg1"],
   "env": {
-    "VERCEL_ENV": {
-      "type": "string",
-      "value": "production"
-    }
+    "VERCEL_ENV": "production"
   },
   "buildCommand": "next build",
   "installCommand": "npm install",
