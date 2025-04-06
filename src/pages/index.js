@@ -1,25 +1,75 @@
 // src/pages/index.js (或 pages/index.js)
 
 import Head from 'next/head';
-import { useState, useEffect } from 'react'; // 导入 useState 和 useEffect (后面分页会用到)
+import { useState } from 'react'; // 暂时移除了 useEffect，因为目前只用 useState
+// 如果后面需要更新 URL，我们会再引入 next/router
 
-// Home 组件基本不变...
-export default function Home({ initialMovies, initialPage, initialTotalPages }) {
-  // 使用 useState 来管理电影列表和分页状态
-  // 初始值来自 getServerSideProps 传递的 props
-  const [movies, setMovies] = useState(initialMovies);
+export default function Home({ initialMovies, initialPage, initialTotalPages, error: initialError }) { // 接收 error prop
+  const [movies, setMovies] = useState(initialMovies || []); // 提供默认空数组以防 initialMovies 为 null/undefined
   const [currentPage, setCurrentPage] = useState(initialPage);
   const [totalPages, setTotalPages] = useState(initialTotalPages);
-  const [loading, setLoading] = useState(false); // 加载状态 (用于分页)
-  const [error, setError] = useState(null);     // 错误状态
+  const [loading, setLoading] = useState(false);
+  // 将来自 SSR 的错误也设置到状态中
+  const [error, setError] = useState(initialError || null);
 
-  // (后面添加处理分页的函数)
+  // --- 新增：处理分页的函数 ---
+  const fetchMoviesForPage = async (pageNumber) => {
+    // 防止重复请求或请求无效页码
+    if (loading || pageNumber < 1 || pageNumber > totalPages) {
+      return;
+    }
 
+    setLoading(true); // 开始加载
+    setError(null);   // 清除之前的错误
+
+    try {
+      // 直接从浏览器调用我们的 API 路由
+      // 注意：这里用相对路径 '/api/...' 即可，浏览器会自动处理
+      const res = await fetch(`/api/getMovies?page=${pageNumber}`);
+
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({})); // 尝试获取错误信息
+        throw new Error(errorData.message || `请求失败，状态码: ${res.status}`);
+      }
+
+      const data = await res.json();
+
+      // 更新状态
+      setMovies(data.results || []); // 更新电影列表
+      setCurrentPage(data.page);     // 更新当前页码
+      setTotalPages(data.total_pages); // 更新总页数 (以防万一有变化)
+
+      // 可选：滚动到页面顶部
+      window.scrollTo(0, 0);
+
+      // 可选：更新浏览器 URL (稍后添加)
+
+
+    } catch (err) {
+      console.error("Error fetching page:", err);
+      setError(err.message || '加载电影时发生错误。');
+      // 出错时不清空电影列表，让用户还能看到旧数据
+    } finally {
+      setLoading(false); // 加载结束 (无论成功或失败)
+    }
+  };
+
+  // --- 处理点击事件的函数 ---
+  const handlePrevPage = () => {
+    fetchMoviesForPage(currentPage - 1);
+  };
+
+  const handleNextPage = () => {
+    fetchMoviesForPage(currentPage + 1);
+  };
+
+  // --- JSX 部分 ---
   return (
     <div>
       <Head>
-        <title>TMDb 电影浏览器 (Next.js)</title>
-        <meta name="description" content="使用 Next.js 构建的 TMDb 电影浏览器" />
+        {/* Head 内容不变 */}
+        <title>TMDb 电影浏览器 (Next.js) - 第 {currentPage} 页</title>
+        <meta name="description" content={`使用 Next.js 构建的 TMDb 电影浏览器 - 第 ${currentPage} 页`} />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
@@ -27,35 +77,39 @@ export default function Home({ initialMovies, initialPage, initialTotalPages }) 
         <h1>热门电影</h1>
 
         {/* 错误提示 */}
-        {error && <p style={{ color: 'red' }}>加载错误: {error}</p>}
+        {/* 同时显示来自 SSR 的错误和客户端请求的错误 */}
+        {(initialError || error) && <p style={{ color: 'red' }}>加载错误: {error || initialError}</p>}
+
 
         {/* 加载状态提示 */}
         {loading && <p>加载中...</p>}
 
         {/* 电影列表 */}
-        <div id="movie-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
-          {movies.map((movie) => (
+        <div id="movie-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', minHeight: '300px' /* 给个最小高度防止加载时跳动 */ }}>
+          {/* 如果正在加载且没有错误，可以显示骨架屏或保持旧数据 */}
+          {!loading && movies.map((movie) => ( // 仅在非加载状态下渲染新列表
             <div key={movie.id} style={{ border: '1px solid #ccc', padding: '10px', width: '200px' }}>
               <img
-                src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder.png'} // 添加图片占位符
+                src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder.png'}
                 alt={movie.title}
-                style={{ width: '100%', height: 'auto' }}
-                onError={(e) => { e.target.onerror = null; e.target.src='/placeholder.png'; }} // 图片加载失败处理
+                style={{ width: '100%', height: 'auto', display: 'block' /* 防止图片下方有空隙 */ }}
+                onError={(e) => { e.target.onerror = null; e.target.src='/placeholder.png'; }}
               />
-              <h3>{movie.title} ({movie.release_date?.substring(0, 4)})</h3> {/* ?. 安全访问符 */}
-              <p>评分: {movie.vote_average.toFixed(1)}</p>
-              {/* 可以在这里添加链接到详情页 */}
+              <h3>{movie.title} ({movie.release_date?.substring(0, 4)})</h3>
+              <p>评分: {movie.vote_average ? movie.vote_average.toFixed(1) : 'N/A'}</p> {/* 增加对评分不存在的处理 */}
             </div>
           ))}
+           {/* 也可以在加载时显示旧数据，视觉效果更连贯 */}
+           {/* {movies.map((movie) => ( ... ))} */}
         </div>
 
         {/* 分页控件 */}
-        <div id="pagination" style={{ marginTop: '20px' }}>
-          <button disabled={currentPage <= 1 || loading}>
+        <div id="pagination" style={{ marginTop: '20px', opacity: loading ? 0.5 : 1 /* 加载时按钮变淡 */ }}>
+          <button onClick={handlePrevPage} disabled={currentPage <= 1 || loading}>
             上一页
           </button>
           <span> 第 {currentPage} 页 / 共 {totalPages} 页 </span>
-          <button disabled={currentPage >= totalPages || loading}>
+          <button onClick={handleNextPage} disabled={currentPage >= totalPages || loading}>
             下一页
           </button>
         </div>
@@ -68,71 +122,46 @@ export default function Home({ initialMovies, initialPage, initialTotalPages }) 
   );
 }
 
-// 在页面组件下方导出 getServerSideProps 函数
+// getServerSideProps 函数保持不变
 export async function getServerSideProps(context) {
-  // context 对象包含请求相关的信息，比如 query 参数
+  // ... (之前的 getServerSideProps 代码)
+   const page = context.query.page || '1';
+   const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+   const host = context.req.headers.host || 'localhost:3000';
+   const apiBaseUrl = `${protocol}://${host}`;
 
-  // 1. 获取页码 (如果 URL 有 ?page=... 参数的话)
-  // 注意：getServerSideProps 在服务器端运行，不能访问 window.location
-  // 它可以通过 context.query 获取 URL 查询参数
-  const page = context.query.page || '1';
+   let initialMovies = [];
+   let initialPage = parseInt(page, 10);
+   let initialTotalPages = 1;
+   let error = null; // 定义 error 变量
 
-  // 2. 调用我们自己的 API 路由
-  // 重要：在 getServerSideProps 中调用自己的 API 路由时，
-  // 需要使用绝对 URL 或相对路径，并且因为这是服务器端到服务器端的调用，
-  // 可以直接调用 localhost 上的地址 (在开发时) 或内部地址 (在生产环境)。
-  // 为了简单起见，我们先用 fetch 调用相对路径 /api/getMovies。
-  // Vercel 会智能处理这种情况。
-  // (更健壮的方式是直接在这里写获取 TMDb 数据的逻辑，避免一次额外的网络请求)
-  // 但为了演示 API Route 的用法，我们先调用它。
+   try {
+     console.log(`getServerSideProps fetching: ${apiBaseUrl}/api/getMovies?page=${page}`);
+     const res = await fetch(`${apiBaseUrl}/api/getMovies?page=${page}`);
 
-  // 获取部署环境的基地址，确保在服务器端也能正确访问 API
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-  // Vercel 会设置 VERCEL_URL 环境变量，优先使用它
-  const host = context.req.headers.host || 'localhost:3000'; // context.req.headers.host 更可靠
-  const apiBaseUrl = `${protocol}://${host}`;
+     if (!res.ok) {
+       console.error(`API route /api/getMovies failed with status: ${res.status}`);
+       const errorData = await res.json().catch(() => ({}));
+       error = errorData.message || `加载电影失败，状态码: ${res.status}`; // 将错误信息赋给 error
+     } else {
+       const data = await res.json();
+       initialMovies = data.results || [];
+       initialPage = data.page || parseInt(page, 10);
+       initialTotalPages = data.total_pages || 1;
+     }
 
-  try {
-    console.log(`getServerSideProps fetching: ${apiBaseUrl}/api/getMovies?page=${page}`);
-    const res = await fetch(`${apiBaseUrl}/api/getMovies?page=${page}`);
+   } catch (err) { // Renamed catch variable to 'err' to avoid conflict
+     console.error("Error in getServerSideProps:", err);
+     error = err.message || '加载电影时发生服务器内部错误。'; // 将错误信息赋给 error
+   }
 
-    if (!res.ok) {
-      // 如果 API 路由返回错误
-      console.error(`API route /api/getMovies failed with status: ${res.status}`);
-      // 抛出错误会让 Next.js 显示一个错误页面
-      // 或者你可以返回一个特定的 props 来在页面上显示错误信息
-      // throw new Error(`Failed to fetch movies: ${res.statusText}`);
-       return {
-        props: {
-          initialMovies: [],
-          initialPage: parseInt(page, 10),
-          initialTotalPages: 1,
-          error: `加载电影失败，状态码: ${res.status}` // 把错误信息传给页面
-        },
-      };
-    }
-
-    const data = await res.json();
-
-    // 3. 将获取到的数据通过 props 返回给 Home 组件
-    return {
-      props: {
-        initialMovies: data.results || [], // API 返回的数据中的电影列表
-        initialPage: data.page || parseInt(page, 10),       // 当前页码
-        initialTotalPages: data.total_pages || 1, // 总页数
-        error: null // 没有错误
-      },
-    };
-  } catch (error) {
-    console.error("Error in getServerSideProps:", error);
-    // 网络错误或其他异常
-     return {
-        props: {
-          initialMovies: [],
-          initialPage: parseInt(page, 10),
-          initialTotalPages: 1,
-          error: '加载电影时发生服务器内部错误。' // 把错误信息传给页面
-        },
-      };
-  }
+   // 将所有数据，包括 error，都通过 props 返回
+   return {
+     props: {
+       initialMovies,
+       initialPage,
+       initialTotalPages,
+       error, // 传递 error 给 Home 组件
+     },
+   };
 }
