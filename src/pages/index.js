@@ -1,8 +1,9 @@
-// src/pages/index.js (或 pages/index.js)
+// src/pages/index.js (或 pages/index.js) - 版本：仅含分页，无详情链接
 
 import Head from 'next/head';
 import { useState } from 'react';
-import Link from 'next/link'; // 导入 Link 组件
+// 不需要 Link 组件了
+// import Link from 'next/link';
 
 export default function Home({ initialMovies, initialPage, initialTotalPages, error: initialError }) {
   const [movies, setMovies] = useState(initialMovies || []);
@@ -42,41 +43,35 @@ export default function Home({ initialMovies, initialPage, initialTotalPages, er
   return (
     <div>
       <Head>
-        <title>TMDb 电影浏览器 (Next.js) - 第 {currentPage} 页</title>
+        {/* 使用模板字符串修复警告 */}
+        <title>{`TMDb 电影浏览器 (Next.js) - 第 ${currentPage} 页`}</title>
         <meta name="description" content={`使用 Next.js 构建的 TMDb 电影浏览器 - 第 ${currentPage} 页`} />
         <link rel="icon" href="/favicon.ico" />
       </Head>
 
-      <main style={{ padding: '20px' }}> {/* 给 main 加点内边距 */}
+      <main style={{ padding: '20px' }}>
         <h1>热门电影</h1>
 
         {(initialError || error) && <p style={{ color: 'red' }}>加载错误: {error || initialError}</p>}
         {loading && <p>加载中...</p>}
 
         <div id="movie-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', minHeight: '300px' }}>
+          {/* --- 恢复到没有 Link 的版本 --- */}
           {!loading && movies.map((movie) => (
-            // --- 修改部分：使用 Link 包裹卡片 ---
-            <Link key={movie.id} href={`/movie/${movie.id}`} passHref legacyBehavior>
-              <a style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}>
-                <div style={{ border: '1px solid #ccc', padding: '10px', width: '200px', height: '100%', cursor: 'pointer', transition: 'transform 0.2s ease', }}
-                     onMouseOver={e => e.currentTarget.style.transform = 'scale(1.03)'} // 简单的悬停效果
-                     onMouseOut={e => e.currentTarget.style.transform = 'scale(1)'}
-                >
-                  <img
-                    src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder.png'}
-                    alt={movie.title}
-                    style={{ width: '100%', height: 'auto', display: 'block' }}
-                    onError={(e) => { e.target.onerror = null; e.target.src='/placeholder.png'; }}
-                  />
-                  <h3 style={{ marginTop: '10px', fontSize: '1em', minHeight: '3em' /* 给标题留点空间 */ }}>
-                      {movie.title} ({movie.release_date?.substring(0, 4)})
-                  </h3>
-                  <p>评分: {movie.vote_average ? movie.vote_average.toFixed(1) : 'N/A'}</p>
-                </div>
-              </a>
-            </Link>
-             // --- 修改结束 ---
+            <div key={movie.id} style={{ border: '1px solid #ccc', padding: '10px', width: '200px' }}>
+              <img
+                src={movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : '/placeholder.png'}
+                alt={movie.title}
+                style={{ width: '100%', height: 'auto', display: 'block' }}
+                onError={(e) => { e.target.onerror = null; e.target.src='/placeholder.png'; }}
+              />
+              <h3 style={{ marginTop: '10px', fontSize: '1em', minHeight: '3em' }}>
+                  {movie.title} ({movie.release_date?.substring(0, 4)})
+              </h3>
+              <p>评分: {movie.vote_average ? movie.vote_average.toFixed(1) : 'N/A'}</p>
+            </div>
           ))}
+           {/* --- 恢复结束 --- */}
         </div>
 
         <div id="pagination" style={{ marginTop: '20px', opacity: loading ? 0.5 : 1 }}>
@@ -97,11 +92,10 @@ export default function Home({ initialMovies, initialPage, initialTotalPages, er
   );
 }
 
-// getServerSideProps 函数保持不变
+// getServerSideProps 函数保持不变 (它只调用 getMovies)
 export async function getServerSideProps(context) {
    const page = context.query.page || '1';
    const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
-   // 修正：优先使用 VERCEL_URL (如果存在且在 Vercel 环境)
    const host = process.env.VERCEL_URL || context.req.headers.host || 'localhost:3000';
    const apiBaseUrl = `${protocol}://${host}`;
 
@@ -111,12 +105,14 @@ export async function getServerSideProps(context) {
    let error = null;
 
    try {
-     console.log(`getServerSideProps fetching: ${apiBaseUrl}/api/getMovies?page=${page}`);
+     console.log(`getServerSideProps fetching: ${apiBaseUrl}/api/getMovies?page=${page}`); // 这个日志还在
      const res = await fetch(`${apiBaseUrl}/api/getMovies?page=${page}`);
 
      if (!res.ok) {
+       // *** 注意：这里的错误处理逻辑也可能导致页面显示401 ***
        console.error(`API route /api/getMovies failed with status: ${res.status}`);
        const errorData = await res.json().catch(() => ({}));
+       // *** 如果 getMovies 返回 401，这里会将错误信息传递给页面 ***
        error = errorData.message || `加载电影失败，状态码: ${res.status}`;
      } else {
        const data = await res.json();
