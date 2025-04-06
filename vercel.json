@@ -6,11 +6,21 @@
       "use": "@vercel/next"
     }
   ],
+  "regions": ["hkg1"],
   "env": {
     "VERCEL_ENV": {
       "type": "string",
       "value": "production"
     }
   },
-  "buildCommand": "next build"
+  "buildCommand": "next build",
+  "installCommand": "npm install",
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store, max-age=0" }
+      ]
+    }
+  ]
 } 
