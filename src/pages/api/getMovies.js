@@ -6,16 +6,17 @@ export default async function handler(req, res) {
       return res.status(405).json({ message: `Method ${req.method} Not Allowed` });
     }
   
-    // 1. 从环境变量获取 API Key
+    // 获取 API 认证信息
     const apiKey = process.env.TMDB_API_KEY;
+    const accessToken = process.env.TMDB_ACCESS_TOKEN;
   
-    if (!apiKey) {
-      console.error('TMDB API Key not found in environment variables.');
+    if (!apiKey && !accessToken) {
+      console.error('TMDb 认证信息未找到: 需要设置 TMDB_API_KEY 或 TMDB_ACCESS_TOKEN');
       return res.status(500).json({ 
-        message: 'Server configuration error: API Key missing.',
+        message: 'TMDb 认证信息未找到: 需要设置 TMDB_API_KEY 或 TMDB_ACCESS_TOKEN',
         debug: {
           env_keys: Object.keys(process.env)
-            .filter(key => !key.includes('SECRET') && !key.includes('KEY')),
+            .filter(key => !key.includes('SECRET') && !key.includes('KEY') && !key.includes('TOKEN')),
           node_env: process.env.NODE_ENV,
           vercel_env: process.env.VERCEL_ENV || 'not set',
           vercel_url: process.env.VERCEL_URL || 'not set'
@@ -23,57 +24,68 @@ export default async function handler(req, res) {
       });
     }
   
-    // 2. 从请求的查询参数中获取页码，默认为 1
     const page = req.query.page || '1';
     
-    // 打印环境信息（不包含私钥）以帮助调试
     console.log('Environment info:', {
       node_env: process.env.NODE_ENV,
       vercel_env: process.env.VERCEL_ENV || 'not set',
       has_api_key: !!apiKey,
-      api_key_length: apiKey ? apiKey.length : 0,
+      has_access_token: !!accessToken,
       is_vercel: !!process.env.VERCEL
     });
   
-    // 3. 构建 TMDb API URL - 使用标准 API KEY 方法
-    const tmdbUrl = `https://api.themoviedb.org/3/movie/popular?api_key=${apiKey}&language=zh-CN&page=${page}`;
+    // 根据可用的认证方式构建请求
+    let tmdbUrl = '';
+    const fetchOptions = {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      }
+    };
     
-    console.log(`Fetching TMDb data for page: ${page}`);
+    // 优先使用 access token (v4 auth)
+    if (accessToken) {
+      tmdbUrl = `https://api.themoviedb.org/3/movie/popular?language=zh-CN&page=${page}`;
+      fetchOptions.headers['Authorization'] = `Bearer ${accessToken}`;
+      console.log('使用 Access Token 认证方式');
+    } 
+    // 其次使用 API Key (v3 auth)
+    else if (apiKey) {
+      tmdbUrl = `https://api.themoviedb.org/3/movie/popular?api_key=${apiKey}&language=zh-CN&page=${page}`;
+      console.log('使用 API Key 认证方式');
+    }
+    
+    console.log(`获取第 ${page} 页电影数据`);
   
     try {
-      // 4. 使用 fetch 调用 TMDb API
-      const fetchOptions = {
-        method: 'GET',
-        headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
-          // 我们在URL中使用api_key而不是Authorization header
-        }
-      };
-      
       const tmdbRes = await fetch(tmdbUrl, fetchOptions);
   
-      // 5. 处理响应
       if (!tmdbRes.ok) {
         const status = tmdbRes.status;
-        console.error(`TMDb API request failed with status: ${status}`);
+        console.error(`TMDb API 请求失败，状态码: ${status}`);
         
-        let errorMessage = `Failed to fetch data from TMDb. Status: ${status}`;
-        let errorDetail = 'Unknown TMDb error';
+        let errorMessage = `无法从 TMDb 获取数据。状态码: ${status}`;
+        let errorDetail = '未知 TMDb 错误';
         
         try {
           const errorData = await tmdbRes.json();
           errorDetail = errorData.status_message || errorDetail;
-          console.error('TMDb error details:', errorData);
+          console.error('TMDb 错误详情:', JSON.stringify(errorData));
           
-          // 如果是401错误，可能是API密钥问题
           if (status === 401) {
-            errorMessage = 'TMDb API密钥认证失败。请检查API密钥是否正确设置。';
-            console.error('API Key validation failed. Masked key:', 
-              apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : 'undefined');
+            errorMessage = 'TMDb 认证失败。请检查您的 API 密钥或访问令牌是否正确设置。';
+            if (apiKey) {
+              console.error('API Key 验证失败，密钥前4位和后4位:', 
+                apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : '未设置');
+            }
+            if (accessToken) {
+              console.error('Access Token 验证失败，令牌前4位和后4位:', 
+                accessToken ? `${accessToken.substring(0, 4)}...${accessToken.substring(accessToken.length - 4)}` : '未设置');
+            }
           }
         } catch (parseError) {
-          console.error('Could not parse TMDb error response:', parseError);
+          console.error('无法解析 TMDb 错误响应:', parseError);
         }
         
         return res.status(status).json({
@@ -83,16 +95,15 @@ export default async function handler(req, res) {
       }
   
       const data = await tmdbRes.json();
-      console.log(`Successfully fetched TMDb data. Got ${data.results?.length || 0} results.`);
+      console.log(`成功获取 TMDb 数据。获取了 ${data.results?.length || 0} 条电影信息。`);
   
-      // 6. 发送数据回前端
       res.status(200).json(data);
   
     } catch (error) {
-      console.error('Error fetching from TMDb in /api/getMovies:', error);
+      console.error('从 TMDb 获取数据时出错:', error);
       res.status(500).json({ 
-        message: 'Internal Server Error while fetching from TMDb.',
-        error_details: process.env.NODE_ENV === 'development' ? error.message : 'Error details hidden in production'
+        message: '从 TMDb 获取数据时发生服务器内部错误。',
+        error_details: process.env.NODE_ENV === 'development' ? error.message : '生产环境中隐藏错误详情'
       });
     }
   }

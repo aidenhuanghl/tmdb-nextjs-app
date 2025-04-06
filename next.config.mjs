@@ -4,6 +4,7 @@ const nextConfig = {
   env: {
     // 这些环境变量将在构建时注入
     TMDB_API_KEY: process.env.TMDB_API_KEY,
+    TMDB_ACCESS_TOKEN: process.env.TMDB_ACCESS_TOKEN,
   },
   // 确保 API 路由有足够的执行时间
   serverRuntimeConfig: {
